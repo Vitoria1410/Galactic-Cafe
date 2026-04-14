@@ -50,6 +50,7 @@
             bg: '#0D0221',
             cyan: '#00FFD5',
             pink: '#FF007F',
+            counter: '#323246',
             nitrogen: '#0064FF',
             bolts: '#646464',
             fuel: '#00C800',
@@ -64,38 +65,34 @@
         let stars = [];
         let cupColor = '#FFFFFF';
         let lastSpawn = 0;
+        let transitionAlpha = 0;
+        let transitionTarget = null;
 
-        // Inicializar estrelas
+        // Assets
+        const facadeImg = new Image();
+        facadeImg.src = 'assets/facade.png';
+
+        // Estrelas de fundo
         for (let i = 0; i < 50; i++) {
-            stars.push({
-                x: Math.random() * 800,
-                y: Math.random() * 600,
-                s: Math.random() * 2 + 1
-            });
+            stars.push({ x: Math.random() * 800, y: Math.random() * 600, s: Math.random() * 2 + 1 });
         }
 
         class Particle {
             constructor(x, y, color, type) {
-                this.x = x;
-                this.y = y;
-                this.color = color;
-                this.type = type;
+                this.x = x; this.y = y; this.color = color; this.type = type;
                 this.vx = (Math.random() - 0.5) * 4;
                 this.vy = -Math.random() * 4 - 2;
                 this.life = 1.0;
             }
             update() {
-                this.x += this.vx;
-                this.y += this.vy;
+                this.x += this.vx; this.y += this.vy;
                 if (this.type === 'spark') this.vy += 0.2;
                 this.life -= 0.02;
             }
             draw() {
                 ctx.globalAlpha = this.life;
                 ctx.fillStyle = this.color;
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, this.type === 'smoke' ? 8 : 3, 0, Math.PI * 2);
-                ctx.fill();
+                ctx.beginPath(); ctx.arc(this.x, this.y, this.type === 'smoke' ? 8 : 3, 0, Math.PI * 2); ctx.fill();
                 ctx.globalAlpha = 1.0;
             }
         }
@@ -106,27 +103,22 @@
                 const orders = ['Nitrogênio', 'Parafusos', 'Combustível'];
                 this.type = types[Math.floor(Math.random() * types.length)];
                 this.order = orders[Math.floor(Math.random() * orders.length)];
-                this.x = 850;
-                this.y = 350;
-                this.targetX = 250;
+                this.x = 850; this.y = 350; this.targetX = 250;
                 this.state = 'entering';
                 this.floatOffset = Math.random() * Math.PI * 2;
             }
             update() {
                 let speed = 3 * speedMult;
                 if (this.state === 'entering') {
-                    if (this.x > this.targetX) this.x -= speed;
-                    else this.state = 'waiting';
+                    if (this.x > this.targetX) this.x -= speed; else this.state = 'waiting';
                 } else if (this.state === 'leaving') {
                     this.x -= speed;
-                    if (this.x < -100) return true;
+                    return (this.x < -100);
                 }
                 return false;
             }
             draw() {
                 let floatY = this.y + Math.sin(Date.now() * 0.005 + this.floatOffset) * 10;
-                
-                // Desenhar Alien
                 ctx.fillStyle = this.type === 'mushroom' ? COLORS.pink : (this.type === 'cyborg' ? '#888' : COLORS.cyan);
                 if (this.type === 'mushroom') {
                     ctx.beginPath(); ctx.ellipse(this.x, floatY - 20, 30, 20, 0, 0, Math.PI * 2); ctx.fill();
@@ -136,41 +128,35 @@
                     ctx.fillStyle = 'red'; ctx.fillRect(this.x - 10, floatY - 10, 20, 5);
                 } else {
                     ctx.beginPath(); ctx.arc(this.x, floatY - 10, 25, 0, Math.PI * 2); ctx.fill();
-                    for(let i=0; i<3; i++) {
-                        ctx.fillRect(this.x - 20 + i*15, floatY + 10, 10, 20);
-                    }
+                    for(let i=0; i<3; i++) ctx.fillRect(this.x - 20 + i*15, floatY + 10, 10, 20);
                 }
-
                 if (this.state === 'waiting') {
                     ctx.fillStyle = 'white';
                     ctx.beginPath(); ctx.ellipse(this.x + 60, floatY - 60, 60, 25, 0, 0, Math.PI * 2); ctx.fill();
-                    ctx.fillStyle = 'black';
-                    ctx.font = 'bold 14px Courier';
-                    ctx.fillText(this.order, this.x + 20, floatY - 55);
+                    ctx.fillStyle = 'black'; ctx.font = 'bold 14px Courier'; ctx.textAlign = 'center';
+                    ctx.fillText(this.order, this.x + 60, floatY - 55);
                 }
             }
         }
 
         function serve(mix) {
-            lastMix = mix;
-            let pColor = COLORS.white;
-            let pType = 'smoke';
-
-            if (mix === 'Nitrogênio') { cupColor = COLORS.nitrogen; pColor = 'white'; }
+            let pColor = 'white', pType = 'smoke';
+            if (mix === 'Nitrogênio') cupColor = COLORS.nitrogen;
             if (mix === 'Parafusos') { cupColor = COLORS.bolts; pColor = '#FFD700'; pType = 'spark'; }
             if (mix === 'Combustível') { cupColor = COLORS.fuel; pColor = COLORS.cyan; }
-
-            for (let i = 0; i < 15; i++) {
-                particles.push(new Particle(300, 380, pColor, pType));
-            }
-
+            for (let i = 0; i < 15; i++) particles.push(new Particle(300, 380, pColor, pType));
             if (customers.length > 0 && customers[0].state === 'waiting') {
                 if (customers[0].order === mix) {
-                    score += 100;
-                    customers[0].state = 'leaving';
+                    score += 100; customers[0].state = 'leaving';
                     if (score % 500 === 0) speedMult += 0.2;
                 }
             }
+        }
+
+        function startTransition(target) {
+            transitionTarget = target;
+            gameState = 'TRANSITION';
+            transitionAlpha = 0;
         }
 
         canvas.addEventListener('mousedown', (e) => {
@@ -179,10 +165,7 @@
             const y = (e.clientY - rect.top) * (600 / rect.height);
 
             if (gameState === 'MENU') {
-                gameState = 'PLAYING';
-                score = 0;
-                speedMult = 1.0;
-                customers = [];
+                if (x > 300 && x < 500 && y > 400 && y < 480) startTransition('PLAYING');
             } else if (gameState === 'PLAYING') {
                 if (y > 500 && y < 550) {
                     if (x > 100 && x < 250) serve('Nitrogênio');
@@ -190,92 +173,76 @@
                     if (x > 550 && x < 700) serve('Combustível');
                 }
             } else if (gameState === 'GAMEOVER') {
-                gameState = 'MENU';
+                startTransition('MENU');
             }
         });
 
         function update() {
             if (gameState === 'MENU') {
-                stars.forEach(s => {
-                    s.x -= s.s;
-                    if (s.x < 0) s.x = 800;
-                });
+                stars.forEach(s => { s.x -= s.s; if (s.x < 0) s.x = 800; });
             } else if (gameState === 'PLAYING') {
                 if (Date.now() - lastSpawn > 3000 / speedMult) {
                     if (customers.length < 3) customers.push(new Customer());
                     lastSpawn = Date.now();
                 }
                 customers = customers.filter(c => !c.update());
-                particles = particles.filter(p => {
-                    p.update();
-                    return p.life > 0;
-                });
+                particles = particles.filter(p => { p.update(); return p.life > 0; });
+            } else if (gameState === 'TRANSITION') {
+                transitionAlpha += 0.05;
+                if (transitionAlpha >= 1) {
+                    if (transitionTarget === 'PLAYING') {
+                        gameState = 'PLAYING'; score = 0; speedMult = 1.0; customers = [];
+                    } else { gameState = 'MENU'; }
+                    transitionTarget = 'IN';
+                }
+            } else if (transitionTarget === 'IN') {
+                transitionAlpha -= 0.05;
+                if (transitionAlpha <= 0) { transitionAlpha = 0; transitionTarget = null; }
             }
         }
 
         function draw() {
-            ctx.fillStyle = COLORS.bg;
-            ctx.fillRect(0, 0, 800, 600);
+            ctx.fillStyle = COLORS.bg; ctx.fillRect(0, 0, 800, 600);
 
-            if (gameState === 'MENU') {
-                ctx.fillStyle = 'white';
-                stars.forEach(s => ctx.fillRect(s.x, s.y, 2, 2));
-                ctx.fillStyle = COLORS.cyan;
-                ctx.font = 'bold 50px Courier';
-                ctx.textAlign = 'center';
-                ctx.fillText('GALACTIC SNACK BAR', 400, 250);
-                ctx.fillStyle = COLORS.pink;
-                ctx.font = '20px Courier';
-                ctx.fillText('CLIQUE PARA INICIAR', 400, 350);
-            } else if (gameState === 'PLAYING') {
-                // Balcão
-                ctx.fillStyle = '#323246';
-                ctx.fillRect(0, 400, 800, 20);
-
-                // Chef
+            if (gameState === 'MENU' || (gameState === 'TRANSITION' && transitionTarget === 'PLAYING')) {
+                if (facadeImg.complete && facadeImg.naturalWidth !== 0) {
+                    ctx.drawImage(facadeImg, 0, 0, 800, 600);
+                } else {
+                    stars.forEach(s => { ctx.fillStyle = 'white'; ctx.fillRect(s.x, s.y, 2, 2); });
+                    ctx.fillStyle = COLORS.cyan; ctx.font = 'bold 40px Courier'; ctx.textAlign = 'center';
+                    ctx.fillText('STELLAR BREWS & GEARS', 400, 200);
+                }
+                // Botão Pulsante
+                const pulse = Math.sin(Date.now() * 0.008) * 5;
+                ctx.shadowBlur = 15 + pulse * 2; ctx.shadowColor = COLORS.cyan; ctx.fillStyle = COLORS.cyan;
+                ctx.beginPath(); ctx.roundRect(300, 400, 200, 70, 15); ctx.fill();
+                ctx.shadowBlur = 0; ctx.fillStyle = COLORS.bg; ctx.font = 'bold 20px Courier'; ctx.textAlign = 'center';
+                ctx.fillText('ABRIR PORTA', 400, 445);
+            } else if (gameState === 'PLAYING' || (gameState === 'TRANSITION' && transitionTarget === 'MENU')) {
+                ctx.fillStyle = COLORS.counter; ctx.fillRect(0, 400, 800, 20);
                 const breath = Math.sin(Date.now() * 0.005) * 5;
                 ctx.fillStyle = '#CCC'; ctx.fillRect(75, 360 + breath, 50, 60);
                 ctx.fillStyle = 'white'; ctx.fillRect(80, 340 + breath, 40, 25);
                 ctx.fillStyle = '#FFDCA4'; ctx.beginPath(); ctx.arc(100, 370 + breath, 15, 0, Math.PI * 2); ctx.fill();
-
                 customers.forEach(c => c.draw());
-
-                // Cup
                 ctx.fillStyle = cupColor; ctx.fillRect(280, 370, 40, 30);
-                ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.strokeRect(280, 370, 40, 30);
-
+                ctx.strokeStyle = 'white'; ctx.strokeRect(280, 370, 40, 30);
                 particles.forEach(p => p.draw());
-
-                // Console
                 ctx.fillStyle = '#141428'; ctx.fillRect(0, 450, 800, 150);
-                ctx.strokeStyle = COLORS.cyan; ctx.lineWidth = 3;
-                ctx.beginPath(); ctx.moveTo(0, 450); ctx.lineTo(800, 450); ctx.stroke();
-
-                const btns = [
-                    {x: 100, t: 'NITROGÊNIO', c: COLORS.nitrogen},
-                    {x: 325, t: 'PARAFUSOS', c: COLORS.bolts},
-                    {x: 550, t: 'COMBUSTÍVEL', c: COLORS.fuel}
-                ];
+                ctx.strokeStyle = COLORS.cyan; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 450); ctx.lineTo(800, 450); ctx.stroke();
+                const btns = [{x: 100, t:'NITROGÊNIO', c:COLORS.nitrogen}, {x: 325, t:'PARAFUSOS', c:COLORS.bolts}, {x: 550, t:'COMBUSTÍVEL', c:COLORS.fuel}];
                 btns.forEach(b => {
-                    ctx.fillStyle = b.c;
-                    ctx.beginPath(); ctx.roundRect(b.x, 500, 150, 50, 10); ctx.fill();
-                    ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.stroke();
-                    ctx.fillStyle = 'white'; ctx.font = 'bold 14px Courier'; ctx.textAlign = 'center';
-                    ctx.fillText(b.t, b.x + 75, 530);
+                    ctx.fillStyle = b.c; ctx.beginPath(); ctx.roundRect(b.x, 500, 150, 50, 10); ctx.fill();
+                    ctx.fillStyle = 'white'; ctx.font = 'bold 14px Courier'; ctx.fillText(b.t, b.x + 75, 530);
                 });
-
-                ctx.fillStyle = COLORS.cyan; ctx.textAlign = 'left'; ctx.font = '20px Courier';
-                ctx.fillText(`PONTOS: ${score}`, 20, 40);
-                ctx.fillStyle = COLORS.pink;
-                ctx.fillText(`VEL: x${speedMult.toFixed(1)}`, 20, 70);
+                ctx.fillStyle = COLORS.cyan; ctx.textAlign = 'left'; ctx.font = '20px Courier'; ctx.fillText(`PONTOS: ${score}`, 20, 40);
             }
 
-            requestAnimationFrame(() => {
-                update();
-                draw();
-            });
+            if (transitionAlpha > 0) {
+                ctx.globalAlpha = transitionAlpha; ctx.fillStyle = 'black'; ctx.fillRect(0, 0, 800, 600); ctx.globalAlpha = 1.0;
+            }
+            requestAnimationFrame(draw); update();
         }
-
         draw();
     </script>
 </body>
