@@ -4,246 +4,310 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Galactic Snack Bar - Estação L0-F1</title>
+    <title>Galactic Snack Bar - L0-F1 Premium</title>
     <style>
-        body {
-            margin: 0;
-            background-color: #0D0221;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            color: white;
-            font-family: 'Courier New', Courier, monospace;
-            overflow: hidden;
-        }
-        canvas {
-            border: 4px solid #00FFD5;
-            box-shadow: 0 0 20px #00FFD5;
-            max-width: 95vw;
-            max-height: 80vh;
-        }
-        h1 {
-            color: #FF007F;
-            text-shadow: 0 0 10px #FF007F;
-            margin-bottom: 10px;
-        }
-        .instructions {
-            margin-top: 10px;
-            color: #00FFD5;
-            font-size: 0.9em;
-        }
+        body { margin: 0; background-color: #050110; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; color: white; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; overflow: hidden; }
+        canvas { border: 2px solid #00FFD5; box-shadow: 0 0 30px rgba(0, 255, 213, 0.3); background: #0D0221; cursor: crosshair; image-rendering: pixelated; }
+        .hud-overlay { position: absolute; top: 10px; pointer-events: none; }
     </style>
 </head>
 <body>
-    <h1>🛸 GALACTIC SNACK BAR</h1>
     <canvas id="gameCanvas" width="800" height="600"></canvas>
-    <div class="instructions">Use o mouse para clicar nos botões do console!</div>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
 
-        // Configurações
-        const COLORS = {
+        // Design Tokens
+        const PALETTE = {
             bg: '#0D0221',
-            cyan: '#00FFD5',
-            pink: '#FF007F',
-            counter: '#323246',
+            neonCyan: '#00FFD5',
+            neonPink: '#FF007F',
+            neonPurple: '#BC13FE',
             nitrogen: '#0064FF',
-            bolts: '#646464',
-            fuel: '#00C800',
-            white: '#FFFFFF'
+            bolts: '#888888',
+            fuel: '#39FF14',
+            white: '#FFFFFF',
+            warning: '#FF3131'
         };
 
+        // Game State
         let gameState = 'MENU';
         let score = 0;
+        let lives = 3;
         let speedMult = 1.0;
         let customers = [];
         let particles = [];
         let stars = [];
-        let cupColor = '#FFFFFF';
+        let transition = { alpha: 0, target: null, active: false };
         let lastSpawn = 0;
-        let transitionAlpha = 0;
-        let transitionTarget = null;
+        let cup = { color: '#FFF', active: false };
 
         // Assets
         const facadeImg = new Image();
         facadeImg.src = 'assets/facade.png';
 
-        // Estrelas de fundo
-        for (let i = 0; i < 50; i++) {
-            stars.push({ x: Math.random() * 800, y: Math.random() * 600, s: Math.random() * 2 + 1 });
+        // Background Init
+        for (let i = 0; i < 80; i++) {
+            stars.push({ x: Math.random() * 800, y: Math.random() * 600, s: Math.random() * 1.5 + 0.5, a: Math.random() });
         }
 
         class Particle {
-            constructor(x, y, color, type) {
-                this.x = x; this.y = y; this.color = color; this.type = type;
-                this.vx = (Math.random() - 0.5) * 4;
-                this.vy = -Math.random() * 4 - 2;
+            constructor(x, y, color, speed = 1) {
+                this.x = x; this.y = y; this.color = color;
+                this.vx = (Math.random() - 0.5) * 6 * speed;
+                this.vy = (Math.random() - 0.5) * 6 * speed - 2;
                 this.life = 1.0;
+                this.size = Math.random() * 4 + 2;
             }
             update() {
                 this.x += this.vx; this.y += this.vy;
-                if (this.type === 'spark') this.vy += 0.2;
-                this.life -= 0.02;
+                this.life -= 0.015;
             }
             draw() {
                 ctx.globalAlpha = this.life;
                 ctx.fillStyle = this.color;
-                ctx.beginPath(); ctx.arc(this.x, this.y, this.type === 'smoke' ? 8 : 3, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fill();
                 ctx.globalAlpha = 1.0;
             }
         }
 
-        class Customer {
+        class Alien {
             constructor() {
-                const types = ['mushroom', 'cyborg', 'tentacles'];
-                const orders = ['Nitrogênio', 'Parafusos', 'Combustível'];
+                const types = ['Gloop', 'Zark', 'Mecha'];
+                const recipes = ['Nitrogênio', 'Parafusos', 'Combustível'];
                 this.type = types[Math.floor(Math.random() * types.length)];
-                this.order = orders[Math.floor(Math.random() * orders.length)];
-                this.x = 850; this.y = 350; this.targetX = 250;
+                this.order = recipes[Math.floor(Math.random() * recipes.length)];
+                this.x = 850; this.y = 350;
+                this.targetX = 300;
                 this.state = 'entering';
+                this.waitTimer = 1.0; // 100% to 0%
                 this.floatOffset = Math.random() * Math.PI * 2;
             }
             update() {
-                let speed = 3 * speedMult;
                 if (this.state === 'entering') {
-                    if (this.x > this.targetX) this.x -= speed; else this.state = 'waiting';
-                } else if (this.state === 'leaving') {
-                    this.x -= speed;
+                    this.x -= 4 * speedMult;
+                    if (this.x <= this.targetX) this.state = 'waiting';
+                } else if (this.state === 'waiting') {
+                    this.waitTimer -= 0.0005 * speedMult;
+                    if (this.waitTimer <= 0) {
+                        this.state = 'angry';
+                        lives--;
+                        if (lives <= 0) gameState = 'GAMEOVER';
+                    }
+                } else if (this.state === 'leaving' || this.state === 'angry') {
+                    this.x -= 6 * speedMult;
                     return (this.x < -100);
                 }
                 return false;
             }
             draw() {
-                let floatY = this.y + Math.sin(Date.now() * 0.005 + this.floatOffset) * 10;
-                ctx.fillStyle = this.type === 'mushroom' ? COLORS.pink : (this.type === 'cyborg' ? '#888' : COLORS.cyan);
-                if (this.type === 'mushroom') {
-                    ctx.beginPath(); ctx.ellipse(this.x, floatY - 20, 30, 20, 0, 0, Math.PI * 2); ctx.fill();
-                    ctx.fillStyle = 'white'; ctx.fillRect(this.x - 10, floatY, 20, 20);
-                } else if (this.type === 'cyborg') {
-                    ctx.fillRect(this.x - 20, floatY - 20, 40, 40);
-                    ctx.fillStyle = 'red'; ctx.fillRect(this.x - 10, floatY - 10, 20, 5);
-                } else {
-                    ctx.beginPath(); ctx.arc(this.x, floatY - 10, 25, 0, Math.PI * 2); ctx.fill();
-                    for(let i=0; i<3; i++) ctx.fillRect(this.x - 20 + i*15, floatY + 10, 10, 20);
-                }
-                if (this.state === 'waiting') {
+                const fy = this.y + Math.sin(Date.now() * 0.004 + this.floatOffset) * 12;
+                
+                // Draw Alien Body
+                ctx.save();
+                ctx.translate(this.x, fy);
+                
+                if (this.type === 'Gloop') {
+                    ctx.fillStyle = PALETTE.neonPurple;
+                    ctx.beginPath(); ctx.ellipse(0, 0, 35, 40, 0, 0, Math.PI*2); ctx.fill();
+                    // Glow eyes
                     ctx.fillStyle = 'white';
-                    ctx.beginPath(); ctx.ellipse(this.x + 60, floatY - 60, 60, 25, 0, 0, Math.PI * 2); ctx.fill();
-                    ctx.fillStyle = 'black'; ctx.font = 'bold 14px Courier'; ctx.textAlign = 'center';
-                    ctx.fillText(this.order, this.x + 60, floatY - 55);
+                    ctx.beginPath(); ctx.arc(-10, -10, 8, 0, Math.PI*2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(10, -10, 8, 0, Math.PI*2); ctx.fill();
+                    ctx.fillStyle = 'black';
+                    ctx.beginPath(); ctx.arc(-10, -10, 4, 0, Math.PI*2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(10, -10, 4, 0, Math.PI*2); ctx.fill();
+                } else if (this.type === 'Zark') {
+                    ctx.fillStyle = PALETTE.neonCyan;
+                    ctx.beginPath(); ctx.moveTo(-30, 20); ctx.lineTo(0, -40); ctx.lineTo(30, 20); ctx.closePath(); ctx.fill();
+                    // Tech patterns
+                    ctx.strokeStyle = 'white'; ctx.lineWidth = 2;
+                    ctx.strokeRect(-15, -10, 30, 10);
+                } else {
+                    ctx.fillStyle = PALETTE.bolts;
+                    ctx.fillRect(-25, -30, 50, 60);
+                    ctx.fillStyle = PALETTE.neonPink;
+                    ctx.fillRect(-20, -25, 40, 10); // Visor
+                }
+                ctx.restore();
+
+                if (this.state === 'waiting') {
+                    // Order Bubble
+                    ctx.fillStyle = 'white';
+                    ctx.beginPath(); ctx.roundRect(this.x + 50, fy - 100, 120, 50, 15); ctx.fill();
+                    ctx.fillStyle = 'black'; ctx.font = 'bold 16px Courier'; ctx.textAlign = 'center';
+                    ctx.fillText(this.order, this.x + 110, fy - 70);
+                    
+                    // Patience Bar
+                    ctx.fillStyle = '#333'; ctx.fillRect(this.x - 30, fy + 50, 60, 6);
+                    ctx.fillStyle = this.waitTimer > 0.3 ? PALETTE.neonCyan : PALETTE.warning;
+                    ctx.fillRect(this.x - 30, fy + 50, 60 * this.waitTimer, 6);
                 }
             }
         }
 
-        function serve(mix) {
-            let pColor = 'white', pType = 'smoke';
-            if (mix === 'Nitrogênio') cupColor = COLORS.nitrogen;
-            if (mix === 'Parafusos') { cupColor = COLORS.bolts; pColor = '#FFD700'; pType = 'spark'; }
-            if (mix === 'Combustível') { cupColor = COLORS.fuel; pColor = COLORS.cyan; }
-            for (let i = 0; i < 15; i++) particles.push(new Particle(300, 380, pColor, pType));
-            if (customers.length > 0 && customers[0].state === 'waiting') {
-                if (customers[0].order === mix) {
-                    score += 100; customers[0].state = 'leaving';
-                    if (score % 500 === 0) speedMult += 0.2;
-                }
-            }
+        function spawnParticles(x, y, color, count = 20, speed = 1) {
+            for (let i = 0; i < count; i++) particles.push(new Particle(x, y, color, speed));
         }
 
-        function startTransition(target) {
-            transitionTarget = target;
-            gameState = 'TRANSITION';
-            transitionAlpha = 0;
+        function serve(item) {
+            if (gameState !== 'PLAYING') return;
+            
+            let color = PALETTE.white;
+            if (item === 'Nitrogênio') { color = PALETTE.nitrogen; cup.color = color; spawnParticles(300, 400, color, 15); }
+            if (item === 'Parafusos') { color = PALETTE.bolts; cup.color = color; spawnParticles(300, 400, '#FFD700', 20, 1.5); }
+            if (item === 'Combustível') { color = PALETTE.fuel; cup.color = color; spawnParticles(300, 400, color, 15); }
+            
+            cup.active = true;
+
+            if (customers.length > 0) {
+                const target = customers[0];
+                if (target.state === 'waiting') {
+                    if (target.order === item) {
+                        score += 100;
+                        target.state = 'leaving';
+                        spawnParticles(target.x, target.y, PALETTE.neonCyan, 30, 2);
+                        if (score % 500 === 0) speedMult += 0.15;
+                    } else {
+                        spawnParticles(300, 400, PALETTE.warning, 10);
+                    }
+                }
+            }
         }
 
         canvas.addEventListener('mousedown', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            const x = (e.clientX - rect.left) * (800 / rect.width);
-            const y = (e.clientY - rect.top) * (600 / rect.height);
+            const r = canvas.getBoundingClientRect();
+            const mx = (e.clientX - r.left) * (800 / r.width);
+            const my = (e.clientY - r.top) * (600 / r.height);
 
             if (gameState === 'MENU') {
-                if (x > 300 && x < 500 && y > 400 && y < 480) startTransition('PLAYING');
+                if (mx > 300 && mx < 500 && my > 400 && my < 480) {
+                    gameState = 'PLAYING'; score = 0; lives = 3; speedMult = 1.0; customers = [];
+                }
             } else if (gameState === 'PLAYING') {
-                if (y > 500 && y < 550) {
-                    if (x > 100 && x < 250) serve('Nitrogênio');
-                    if (x > 325 && x < 475) serve('Parafusos');
-                    if (x > 550 && x < 700) serve('Combustível');
+                if (my > 500 && my < 560) {
+                    if (mx > 50 && mx < 250) serve('Nitrogênio');
+                    if (mx > 300 && mx < 500) serve('Parafusos');
+                    if (mx > 550 && mx < 750) serve('Combustível');
                 }
             } else if (gameState === 'GAMEOVER') {
-                startTransition('MENU');
+                gameState = 'MENU';
             }
         });
 
-        function update() {
+        function drawBackground() {
+            ctx.fillStyle = PALETTE.bg; ctx.fillRect(0, 0, 800, 600);
+            stars.forEach(s => {
+                ctx.globalAlpha = s.a;
+                ctx.fillStyle = 'white';
+                ctx.fillRect(s.x, s.y, s.s, s.s);
+                s.x -= s.s * 0.5;
+                if (s.x < 0) s.x = 800;
+            });
+            ctx.globalAlpha = 1.0;
+        }
+
+        function drawMenu() {
+            if (facadeImg.complete && facadeImg.naturalWidth > 0) {
+                ctx.drawImage(facadeImg, 0, 0, 800, 600);
+            } else {
+                // Procedural Facade
+                ctx.fillStyle = '#1a1a2e'; ctx.fillRect(100, 100, 600, 400);
+                ctx.strokeStyle = PALETTE.neonCyan; ctx.lineWidth = 4; ctx.strokeRect(100, 100, 600, 400);
+                ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(150, 150, 100, 150); // Window
+                ctx.fillStyle = PALETTE.neonPink; ctx.font = 'bold 40px Courier'; ctx.textAlign = 'center';
+                ctx.fillText('STELLAR BREWS', 400, 200);
+            }
+
+            // Start Button
+            const pulse = 1 + Math.sin(Date.now() * 0.006) * 0.05;
+            ctx.save(); ctx.translate(400, 440); ctx.scale(pulse, pulse);
+            ctx.shadowBlur = 20; ctx.shadowColor = PALETTE.neonCyan;
+            ctx.fillStyle = PALETTE.neonCyan; ctx.beginPath(); ctx.roundRect(-100, -35, 200, 70, 15); ctx.fill();
+            ctx.shadowBlur = 0; ctx.fillStyle = PALETTE.bg; ctx.font = 'bold 22px Courier';
+            ctx.fillText('ABRIR PORTA', 0, 8);
+            ctx.restore();
+        }
+
+        function drawGame() {
+            // Counter
+            ctx.fillStyle = '#1e1e2f'; ctx.fillRect(0, 400, 800, 30);
+            ctx.strokeStyle = PALETTE.neonCyan; ctx.lineWidth = 2; ctx.strokeRect(0, 400, 800, 2);
+
+            // Chef Procedural
+            const b = Math.sin(Date.now() * 0.005) * 4;
+            ctx.fillStyle = '#CCC'; ctx.fillRect(80, 350 + b, 60, 70);
+            ctx.fillStyle = 'white'; ctx.fillRect(85, 320 + b, 50, 35); // Hat
+            ctx.fillStyle = '#FFDCA4'; ctx.beginPath(); ctx.arc(110, 365 + b, 18, 0, Math.PI*2); ctx.fill();
+
+            customers.forEach(c => c.draw());
+            
+            // Cup
+            if (cup.active) {
+                ctx.fillStyle = cup.color; ctx.fillRect(280, 375, 45, 30);
+                ctx.strokeStyle = 'white'; ctx.strokeRect(280, 375, 45, 30);
+            }
+
+            particles.forEach(p => p.draw());
+
+            // Bottom Console
+            ctx.fillStyle = '#0a0a1a'; ctx.fillRect(0, 460, 800, 140);
+            ctx.strokeStyle = PALETTE.neonCyan; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(0, 460); ctx.lineTo(800, 460); ctx.stroke();
+
+            const btns = [
+                {x: 50, t: 'NITROGÊNIO', c: PALETTE.nitrogen},
+                {x: 300, t: 'PARAFUSOS', c: PALETTE.bolts},
+                {x: 550, t: 'COMBUSTÍVEL', c: PALETTE.fuel}
+            ];
+            btns.forEach(btn => {
+                ctx.fillStyle = btn.c; ctx.beginPath(); ctx.roundRect(btn.x, 500, 200, 60, 10); ctx.fill();
+                ctx.strokeStyle = 'white'; ctx.stroke();
+                ctx.fillStyle = 'white'; ctx.font = 'bold 16px Courier'; ctx.textAlign = 'center';
+                ctx.fillText(btn.t, btn.x + 100, 538);
+            });
+
+            // HUD
+            ctx.textAlign = 'left'; ctx.font = 'bold 24px Courier';
+            ctx.fillStyle = PALETTE.neonCyan; ctx.fillText(`CRÉDITOS: ${score}`, 20, 40);
+            ctx.fillStyle = PALETTE.neonPink; ctx.fillText(`VIDAS: ${'❤️'.repeat(lives)}`, 20, 75);
+        }
+
+        function drawGameOver() {
+            ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(0,0,800,600);
+            ctx.fillStyle = PALETTE.warning; ctx.font = 'bold 50px Courier'; ctx.textAlign = 'center';
+            ctx.fillText('A ESTAÇÃO FALIU!', 400, 250);
+            ctx.fillStyle = 'white'; ctx.font = '24px Courier';
+            ctx.fillText(`PONTUAÇÃO FINAL: ${score}`, 400, 320);
+            ctx.fillStyle = PALETTE.neonCyan;
+            ctx.fillText('CLIQUE PARA RECOMEÇAR', 400, 450);
+        }
+
+        function loop() {
+            drawBackground();
+
             if (gameState === 'MENU') {
-                stars.forEach(s => { s.x -= s.s; if (s.x < 0) s.x = 800; });
+                drawMenu();
             } else if (gameState === 'PLAYING') {
-                if (Date.now() - lastSpawn > 3000 / speedMult) {
-                    if (customers.length < 3) customers.push(new Customer());
+                if (Date.now() - lastSpawn > 3500 / speedMult) {
+                    if (customers.length < 3) customers.push(new Alien());
                     lastSpawn = Date.now();
                 }
-                customers = customers.filter(c => !c.update());
-                particles = particles.filter(p => { p.update(); return p.life > 0; });
-            } else if (gameState === 'TRANSITION') {
-                transitionAlpha += 0.05;
-                if (transitionAlpha >= 1) {
-                    if (transitionTarget === 'PLAYING') {
-                        gameState = 'PLAYING'; score = 0; speedMult = 1.0; customers = [];
-                    } else { gameState = 'MENU'; }
-                    transitionTarget = 'IN';
-                }
-            } else if (transitionTarget === 'IN') {
-                transitionAlpha -= 0.05;
-                if (transitionAlpha <= 0) { transitionAlpha = 0; transitionTarget = null; }
+                updateGame();
+                drawGame();
+            } else if (gameState === 'GAMEOVER') {
+                drawGameOver();
             }
+
+            requestAnimationFrame(loop);
         }
 
-        function draw() {
-            ctx.fillStyle = COLORS.bg; ctx.fillRect(0, 0, 800, 600);
-
-            if (gameState === 'MENU' || (gameState === 'TRANSITION' && transitionTarget === 'PLAYING')) {
-                if (facadeImg.complete && facadeImg.naturalWidth !== 0) {
-                    ctx.drawImage(facadeImg, 0, 0, 800, 600);
-                } else {
-                    stars.forEach(s => { ctx.fillStyle = 'white'; ctx.fillRect(s.x, s.y, 2, 2); });
-                    ctx.fillStyle = COLORS.cyan; ctx.font = 'bold 40px Courier'; ctx.textAlign = 'center';
-                    ctx.fillText('STELLAR BREWS & GEARS', 400, 200);
-                }
-                // Botão Pulsante
-                const pulse = Math.sin(Date.now() * 0.008) * 5;
-                ctx.shadowBlur = 15 + pulse * 2; ctx.shadowColor = COLORS.cyan; ctx.fillStyle = COLORS.cyan;
-                ctx.beginPath(); ctx.roundRect(300, 400, 200, 70, 15); ctx.fill();
-                ctx.shadowBlur = 0; ctx.fillStyle = COLORS.bg; ctx.font = 'bold 20px Courier'; ctx.textAlign = 'center';
-                ctx.fillText('ABRIR PORTA', 400, 445);
-            } else if (gameState === 'PLAYING' || (gameState === 'TRANSITION' && transitionTarget === 'MENU')) {
-                ctx.fillStyle = COLORS.counter; ctx.fillRect(0, 400, 800, 20);
-                const breath = Math.sin(Date.now() * 0.005) * 5;
-                ctx.fillStyle = '#CCC'; ctx.fillRect(75, 360 + breath, 50, 60);
-                ctx.fillStyle = 'white'; ctx.fillRect(80, 340 + breath, 40, 25);
-                ctx.fillStyle = '#FFDCA4'; ctx.beginPath(); ctx.arc(100, 370 + breath, 15, 0, Math.PI * 2); ctx.fill();
-                customers.forEach(c => c.draw());
-                ctx.fillStyle = cupColor; ctx.fillRect(280, 370, 40, 30);
-                ctx.strokeStyle = 'white'; ctx.strokeRect(280, 370, 40, 30);
-                particles.forEach(p => p.draw());
-                ctx.fillStyle = '#141428'; ctx.fillRect(0, 450, 800, 150);
-                ctx.strokeStyle = COLORS.cyan; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 450); ctx.lineTo(800, 450); ctx.stroke();
-                const btns = [{x: 100, t:'NITROGÊNIO', c:COLORS.nitrogen}, {x: 325, t:'PARAFUSOS', c:COLORS.bolts}, {x: 550, t:'COMBUSTÍVEL', c:COLORS.fuel}];
-                btns.forEach(b => {
-                    ctx.fillStyle = b.c; ctx.beginPath(); ctx.roundRect(b.x, 500, 150, 50, 10); ctx.fill();
-                    ctx.fillStyle = 'white'; ctx.font = 'bold 14px Courier'; ctx.fillText(b.t, b.x + 75, 530);
-                });
-                ctx.fillStyle = COLORS.cyan; ctx.textAlign = 'left'; ctx.font = '20px Courier'; ctx.fillText(`PONTOS: ${score}`, 20, 40);
-            }
-
-            if (transitionAlpha > 0) {
-                ctx.globalAlpha = transitionAlpha; ctx.fillStyle = 'black'; ctx.fillRect(0, 0, 800, 600); ctx.globalAlpha = 1.0;
-            }
-            requestAnimationFrame(draw); update();
+        function updateGame() {
+            customers = customers.filter(c => !c.update());
+            particles = particles.filter(p => { p.update(); return p.life > 0; });
         }
-        draw();
+
+        loop();
     </script>
 </body>
 </html>
