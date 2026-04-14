@@ -1,0 +1,282 @@
+
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Galactic Snack Bar - Estação L0-F1</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #0D0221;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            color: white;
+            font-family: 'Courier New', Courier, monospace;
+            overflow: hidden;
+        }
+        canvas {
+            border: 4px solid #00FFD5;
+            box-shadow: 0 0 20px #00FFD5;
+            max-width: 95vw;
+            max-height: 80vh;
+        }
+        h1 {
+            color: #FF007F;
+            text-shadow: 0 0 10px #FF007F;
+            margin-bottom: 10px;
+        }
+        .instructions {
+            margin-top: 10px;
+            color: #00FFD5;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <h1>🛸 GALACTIC SNACK BAR</h1>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div class="instructions">Use o mouse para clicar nos botões do console!</div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Configurações
+        const COLORS = {
+            bg: '#0D0221',
+            cyan: '#00FFD5',
+            pink: '#FF007F',
+            nitrogen: '#0064FF',
+            bolts: '#646464',
+            fuel: '#00C800',
+            white: '#FFFFFF'
+        };
+
+        let gameState = 'MENU';
+        let score = 0;
+        let speedMult = 1.0;
+        let customers = [];
+        let particles = [];
+        let stars = [];
+        let cupColor = '#FFFFFF';
+        let lastSpawn = 0;
+
+        // Inicializar estrelas
+        for (let i = 0; i < 50; i++) {
+            stars.push({
+                x: Math.random() * 800,
+                y: Math.random() * 600,
+                s: Math.random() * 2 + 1
+            });
+        }
+
+        class Particle {
+            constructor(x, y, color, type) {
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                this.type = type;
+                this.vx = (Math.random() - 0.5) * 4;
+                this.vy = -Math.random() * 4 - 2;
+                this.life = 1.0;
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                if (this.type === 'spark') this.vy += 0.2;
+                this.life -= 0.02;
+            }
+            draw() {
+                ctx.globalAlpha = this.life;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.type === 'smoke' ? 8 : 3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+            }
+        }
+
+        class Customer {
+            constructor() {
+                const types = ['mushroom', 'cyborg', 'tentacles'];
+                const orders = ['Nitrogênio', 'Parafusos', 'Combustível'];
+                this.type = types[Math.floor(Math.random() * types.length)];
+                this.order = orders[Math.floor(Math.random() * orders.length)];
+                this.x = 850;
+                this.y = 350;
+                this.targetX = 250;
+                this.state = 'entering';
+                this.floatOffset = Math.random() * Math.PI * 2;
+            }
+            update() {
+                let speed = 3 * speedMult;
+                if (this.state === 'entering') {
+                    if (this.x > this.targetX) this.x -= speed;
+                    else this.state = 'waiting';
+                } else if (this.state === 'leaving') {
+                    this.x -= speed;
+                    if (this.x < -100) return true;
+                }
+                return false;
+            }
+            draw() {
+                let floatY = this.y + Math.sin(Date.now() * 0.005 + this.floatOffset) * 10;
+                
+                // Desenhar Alien
+                ctx.fillStyle = this.type === 'mushroom' ? COLORS.pink : (this.type === 'cyborg' ? '#888' : COLORS.cyan);
+                if (this.type === 'mushroom') {
+                    ctx.beginPath(); ctx.ellipse(this.x, floatY - 20, 30, 20, 0, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = 'white'; ctx.fillRect(this.x - 10, floatY, 20, 20);
+                } else if (this.type === 'cyborg') {
+                    ctx.fillRect(this.x - 20, floatY - 20, 40, 40);
+                    ctx.fillStyle = 'red'; ctx.fillRect(this.x - 10, floatY - 10, 20, 5);
+                } else {
+                    ctx.beginPath(); ctx.arc(this.x, floatY - 10, 25, 0, Math.PI * 2); ctx.fill();
+                    for(let i=0; i<3; i++) {
+                        ctx.fillRect(this.x - 20 + i*15, floatY + 10, 10, 20);
+                    }
+                }
+
+                if (this.state === 'waiting') {
+                    ctx.fillStyle = 'white';
+                    ctx.beginPath(); ctx.ellipse(this.x + 60, floatY - 60, 60, 25, 0, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = 'black';
+                    ctx.font = 'bold 14px Courier';
+                    ctx.fillText(this.order, this.x + 20, floatY - 55);
+                }
+            }
+        }
+
+        function serve(mix) {
+            lastMix = mix;
+            let pColor = COLORS.white;
+            let pType = 'smoke';
+
+            if (mix === 'Nitrogênio') { cupColor = COLORS.nitrogen; pColor = 'white'; }
+            if (mix === 'Parafusos') { cupColor = COLORS.bolts; pColor = '#FFD700'; pType = 'spark'; }
+            if (mix === 'Combustível') { cupColor = COLORS.fuel; pColor = COLORS.cyan; }
+
+            for (let i = 0; i < 15; i++) {
+                particles.push(new Particle(300, 380, pColor, pType));
+            }
+
+            if (customers.length > 0 && customers[0].state === 'waiting') {
+                if (customers[0].order === mix) {
+                    score += 100;
+                    customers[0].state = 'leaving';
+                    if (score % 500 === 0) speedMult += 0.2;
+                }
+            }
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = (e.clientX - rect.left) * (800 / rect.width);
+            const y = (e.clientY - rect.top) * (600 / rect.height);
+
+            if (gameState === 'MENU') {
+                gameState = 'PLAYING';
+                score = 0;
+                speedMult = 1.0;
+                customers = [];
+            } else if (gameState === 'PLAYING') {
+                if (y > 500 && y < 550) {
+                    if (x > 100 && x < 250) serve('Nitrogênio');
+                    if (x > 325 && x < 475) serve('Parafusos');
+                    if (x > 550 && x < 700) serve('Combustível');
+                }
+            } else if (gameState === 'GAMEOVER') {
+                gameState = 'MENU';
+            }
+        });
+
+        function update() {
+            if (gameState === 'MENU') {
+                stars.forEach(s => {
+                    s.x -= s.s;
+                    if (s.x < 0) s.x = 800;
+                });
+            } else if (gameState === 'PLAYING') {
+                if (Date.now() - lastSpawn > 3000 / speedMult) {
+                    if (customers.length < 3) customers.push(new Customer());
+                    lastSpawn = Date.now();
+                }
+                customers = customers.filter(c => !c.update());
+                particles = particles.filter(p => {
+                    p.update();
+                    return p.life > 0;
+                });
+            }
+        }
+
+        function draw() {
+            ctx.fillStyle = COLORS.bg;
+            ctx.fillRect(0, 0, 800, 600);
+
+            if (gameState === 'MENU') {
+                ctx.fillStyle = 'white';
+                stars.forEach(s => ctx.fillRect(s.x, s.y, 2, 2));
+                ctx.fillStyle = COLORS.cyan;
+                ctx.font = 'bold 50px Courier';
+                ctx.textAlign = 'center';
+                ctx.fillText('GALACTIC SNACK BAR', 400, 250);
+                ctx.fillStyle = COLORS.pink;
+                ctx.font = '20px Courier';
+                ctx.fillText('CLIQUE PARA INICIAR', 400, 350);
+            } else if (gameState === 'PLAYING') {
+                // Balcão
+                ctx.fillStyle = '#323246';
+                ctx.fillRect(0, 400, 800, 20);
+
+                // Chef
+                const breath = Math.sin(Date.now() * 0.005) * 5;
+                ctx.fillStyle = '#CCC'; ctx.fillRect(75, 360 + breath, 50, 60);
+                ctx.fillStyle = 'white'; ctx.fillRect(80, 340 + breath, 40, 25);
+                ctx.fillStyle = '#FFDCA4'; ctx.beginPath(); ctx.arc(100, 370 + breath, 15, 0, Math.PI * 2); ctx.fill();
+
+                customers.forEach(c => c.draw());
+
+                // Cup
+                ctx.fillStyle = cupColor; ctx.fillRect(280, 370, 40, 30);
+                ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.strokeRect(280, 370, 40, 30);
+
+                particles.forEach(p => p.draw());
+
+                // Console
+                ctx.fillStyle = '#141428'; ctx.fillRect(0, 450, 800, 150);
+                ctx.strokeStyle = COLORS.cyan; ctx.lineWidth = 3;
+                ctx.beginPath(); ctx.moveTo(0, 450); ctx.lineTo(800, 450); ctx.stroke();
+
+                const btns = [
+                    {x: 100, t: 'NITROGÊNIO', c: COLORS.nitrogen},
+                    {x: 325, t: 'PARAFUSOS', c: COLORS.bolts},
+                    {x: 550, t: 'COMBUSTÍVEL', c: COLORS.fuel}
+                ];
+                btns.forEach(b => {
+                    ctx.fillStyle = b.c;
+                    ctx.beginPath(); ctx.roundRect(b.x, 500, 150, 50, 10); ctx.fill();
+                    ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.stroke();
+                    ctx.fillStyle = 'white'; ctx.font = 'bold 14px Courier'; ctx.textAlign = 'center';
+                    ctx.fillText(b.t, b.x + 75, 530);
+                });
+
+                ctx.fillStyle = COLORS.cyan; ctx.textAlign = 'left'; ctx.font = '20px Courier';
+                ctx.fillText(`PONTOS: ${score}`, 20, 40);
+                ctx.fillStyle = COLORS.pink;
+                ctx.fillText(`VEL: x${speedMult.toFixed(1)}`, 20, 70);
+            }
+
+            requestAnimationFrame(() => {
+                update();
+                draw();
+            });
+        }
+
+        draw();
+    </script>
+</body>
+</html>
